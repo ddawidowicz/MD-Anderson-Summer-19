@@ -1,0 +1,56 @@
+#####################################################
+# SIMULATIONS TO TEST SIGCLUST2 FUNCTION
+# ORIGINAL SIMULATION PERFORMED IN SIGCLUST2 MANUAL ON GITHUB
+######################################################
+
+#LOAD PACKAGES 
+suppressPackageStartupMessages(library("sigclust2"))
+
+#ORIGINAL SIMULATION
+set.seed(1508)
+n1 <- 60; n2 <- 40; n3 <- 50; n <- n1 + n2 + n3
+p <- 100
+data <- matrix(rnorm(n*p), nrow=n, ncol=p)
+data[, 1] <- data[, 1] + c(rep(2, n1), rep(-2, n2), rep(0, n3))
+data[, 2] <- data[, 2] + c(rep(0, n1+n2), rep(sqrt(3)*3, n3))
+
+shc_result <- shc(data, metric="euclidean", linkage="ward.D2", alpha = 0.05)
+plot(shc_result)
+
+#INCREASE SIZE OF DATA
+set.seed(1508)
+n1 <- 60; n2 <- 40; n3 <-50; n <- n1 + n2 + n3
+p2 <- 500
+data <- matrix(rnorm(n*p2), nrow=n, ncol=p2)
+data[, 1] <- data[, 1] + c(rep(2, n1), rep(-2, n2), rep(0, n3))
+data[, 2] <- data[, 2] + c(rep(0, n1+n2), rep(sqrt(3)*3, n3))
+
+shc_big <- shc(data, metric="euclidean", linkage="ward.D2")
+plot(shc_big)
+
+#TEST RELEVANT VARIABLES
+set.seed(1508)
+n1 <- 60; n2 <- 40; n3 <-50; n <- n1 + n2 + n3
+p2 <- 500
+data <- matrix(rnorm(n*p2), nrow=n, ncol=p2)
+data[, 1] <- data[, 1] + c(rep(2, n1), rep(-2, n2), rep(0, n3))
+data[, 2] <- data[, 2] + c(rep(0, n1+n2), rep(sqrt(3)*3, n3))
+data <- data[,1:2]
+
+shc_relevant = shc(data, metric = "euclidian", linkage = "ward.D2")
+plot(shc_relevant)
+
+#TEST STABILITY
+j = 50
+num_nodes = vector(length = j)
+for (i in 1:j){
+  n1 <- 60; n2 <- 40; n3 <- 50; n <- n1 + n2 + n3
+  p <- 100
+  data <- matrix(rnorm(n*p), nrow=n, ncol=p)
+  data[, 1] <- data[, 1] + c(rep(2, n1), rep(-2, n2), rep(0, n3))
+  data[, 2] <- data[, 2] + c(rep(0, n1+n2), rep(sqrt(3)*3, n3))
+  
+  shc_stable <- shc(data, metric="euclidean", linkage="ward.D2", alpha = 0.05)
+  num_nodes[i] = length(which(shc_stable$nd_type %in% "sig"))
+}
+hist(num_nodes, breaks = seq(0.55,3.55,0.1))
