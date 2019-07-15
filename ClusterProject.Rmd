@@ -1,0 +1,400 @@
+---
+title: ""
+author: "John Steinman"
+date: "7/9/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Objective
+
+The objective of this project is to test various clustering algorithms on simulated datasets of various sizes. The goal is to see which clustering algorithm is the most robust in the presence of "noisy" data. This simulation is important for gene expression studies, such as the one in "Statistical Significance for Hierarchical Clustering" (Kimes et al.)
+
+Below, I will test several different R functions that determine the optimal number of significant clusters: SigClust2, Mclust, Kmeans. Mclust is a function that determines the most suitable number of clusters for a given data set and sorts the data accordingly. The  "factoextra" package contains functions such as 'fviz_nbclust,' which outputs elbow, silhouette, and gap plots, which can be used to determine the true number of clusters, which is necessary in order to perform kmeans clustering.
+
+```{r Load Packages, message=FALSE, warning=FALSE, include=FALSE}
+library(sigclust2)
+library(mclust)
+library(fpc)
+library(factoextra)
+library(gridExtra)
+```
+
+## Simulation in Kimes' SigClust2 Manual 
+
+The SigClust manual on github describes a simulated data set with 150 samples (n) and 100 measurements (p). The simulated data set is generated from 3 Gaussian distributions. The results of the 'shc' function on this data are shown below.
+
+```{r Sigclust2 Original Siulation, message=FALSE, warning=FALSE}
+set.seed(1508)
+n1 <- 60; n2 <- 40; n3 <- 50; n <- n1 + n2 + n3
+p <- 100
+data <- matrix(rnorm(n*p), nrow=n, ncol=p)
+data[, 1] <- data[, 1] + c(rep(2, n1), rep(-2, n2), rep(0, n3))
+data[, 2] <- data[, 2] + c(rep(0, n1+n2), rep(sqrt(3)*3, n3))
+
+shc_result <- shc(data, metric="euclidean", linkage="ward.D2", alpha = 0.05)
+plot(shc_result)
+```
+
+SigClust2 fails to detect 3 clusters in the presence of 98 "noisy" samples.
+
+## SigClust2, Mclust, and Fviz_nbclust Performance on Noisy Data
+  For each noise level below, I will start by testing the sigclust2 function using a euclidean distance metric with each of the following likage methods: Ward.D2, single, average, complete. These are the four that Kimes recommends for data in which n < p. First, I will compare the number of significant clusters that each method detects. Then, I will assess the ability of this method to accurately sort the data into 3 clusters.
+  Next, I will test the Mclust function, which determines the optimal number of clusters and sorts the data accordingly.
+  Finally, I will test the kmeans function's ability to accurately sort the data into 3 clusters. Obviously, this function requires that the user input the number of clusters, rather than leaving the algorithm to find the optimal number of clusters. To simulate a real-life scenario, I will use the fviz_nbclust function to find the probable number of true clusters, and use the kmeans function accordingly.
+
+
+### No Noise 
+In this data simulation, there are no noisy samples. The Ward.D2 and average linkage methods appear to be functioning properly, but the other linkage methods appear ineffective. Note, however, that although the "complete" linkage method fails to detect any significant clusters, it has accurately grouped the samples into 3 clusters.
+The Mclust and Kmeans functions appear to be functioning equally well at groups the samples into the correct clusters.
+```{r No Noise, echo=TRUE, message=FALSE, warning=FALSE}
+
+#Simulate data
+set.seed(1508)
+n1 <- 60; n2 <- 40; n3 <- 50; n <- n1 + n2 + n3
+p <- 100
+data <- (matrix(rnorm(n*p), nrow=n, ncol=p))
+data[, 1] <- data[, 1] + c(rep(2, n1), rep(-2, n2), rep(0, n3))
+data[, 2] <- data[, 2] + c(rep(0, n1+n2), rep(sqrt(3)*3, n3))
+data <- data[, 1:2]
+df = as.data.frame(data)
+
+cluster_index = c(rep(1,n1), rep(2,n2), rep(3,n3)) #Real cluster index
+
+#SigClust2
+shc_ward <- shc(data, metric="euclidean", linkage="ward.D2", alpha = 0.05)
+shc_single <- shc(data, metric="euclidean", linkage="single", alpha = 0.05)
+shc_avg <- shc(data, metric="euclidean", linkage="average", alpha = 0.05)
+shc_complete <- shc(data, metric="euclidean", linkage="complete", alpha = 0.05)
+
+ward_index = cutree(shc_ward$hc_dat, k = 3)
+a = adjustedRandIndex(ward_index, cluster_index)
+
+single_index = cutree(shc_single$hc_dat, k = 3)
+b = adjustedRandIndex(single_index, cluster_index)
+
+avg_index = cutree(shc_avg$hc_dat, k = 3)
+c = adjustedRandIndex(avg_index, cluster_index)
+
+complete_index = cutree(shc_complete$hc_dat, k = 3)
+d = adjustedRandIndex(complete_index, cluster_index)
+
+#plot
+ward_plot = plot(shc_ward)
+single_plot = plot(shc_single)
+avg_plot = plot(shc_avg)
+complete_plot = plot(shc_complete, main = "complete")
+grid.arrange(ward_plot, single_plot, avg_plot, complete_plot, nrow = 2, top = "SHC Methods",
+             bottom = "[1,1] = Ward.D2   [1,2] = single    [2,1] = average    [2,2] = complete")
+
+#Mclust
+Mfit = Mclust(df)
+e = adjustedRandIndex(Mfit$classification, cluster_index)
+
+#Fviz
+wss = fviz_nbclust(df, kmeans, method = "wss") +
+ geom_vline(xintercept = 3, linetype = 2)+
+  labs(subtitle = "Elbow method")
+
+sil = fviz_nbclust(df, kmeans, method = "silhouette") +
+  labs(subtitle = "Silhouette method")
+
+gap = fviz_nbclust(df, kmeans, method = "gap_stat") +
+  labs(subtitle = "gap method")
+
+grid.arrange(wss, sil, gap, nrow = 2)
+
+#Kmeans
+kfit = kmeans(data[,1:2], centers = 3)
+f = adjustedRandIndex(kfit$cluster, cluster_index)
+
+#Compare Cluster Algorithms
+results = matrix(c(a, b, c, d, e, f), ncol = 1, byrow = TRUE)
+colnames(results) = "C. Rand"
+rownames(results) = c("ward.D2", "single", "average", "complete", "Mclust", "Kmeans")
+results = as.table(results)
+results
+```
+
+### Noise Level: 1
+In this data simulation, there are 23 noisy samples. The Ward.D2 and average linkage have slightly lower rand indexes due to this noise. The Kmeans function has the highest rand index.
+Note that at this size (150 x 25) Mclust fails to cluster the data.
+
+```{r Noise Level: 1, echo=TRUE, message=FALSE, warning=FALSE}
+#Simulate data
+set.seed(1508)
+n1 <- 60; n2 <- 40; n3 <- 50; n <- n1 + n2 + n3
+p <- 25
+data <- (matrix(rnorm(n*p), nrow=n, ncol=p))
+data[, 1] <- data[, 1] + c(rep(2, n1), rep(-2, n2), rep(0, n3))
+data[, 2] <- data[, 2] + c(rep(0, n1+n2), rep(sqrt(3)*3, n3))
+df = as.data.frame(data)
+
+cluster_index = c(rep(1,n1), rep(2,n2), rep(3,n3)) #Real cluster index
+
+#SigClust2
+shc_ward <- shc(data, metric="euclidean", linkage="ward.D2", alpha = 0.05)
+shc_single <- shc(data, metric="euclidean", linkage="single", alpha = 0.05)
+shc_avg <- shc(data, metric="euclidean", linkage="average", alpha = 0.05)
+shc_complete <- shc(data, metric="euclidean", linkage="complete", alpha = 0.05)
+
+ward_index = cutree(shc_ward$hc_dat, k = 3)
+a = adjustedRandIndex(ward_index, cluster_index)
+
+single_index = cutree(shc_single$hc_dat, k = 3)
+b = adjustedRandIndex(single_index, cluster_index)
+
+avg_index = cutree(shc_avg$hc_dat, k = 3)
+c = adjustedRandIndex(avg_index, cluster_index)
+
+complete_index = cutree(shc_complete$hc_dat, k = 3)
+d = adjustedRandIndex(complete_index, cluster_index)
+
+#plot
+ward_plot = plot(shc_ward)
+single_plot = plot(shc_single)
+avg_plot = plot(shc_avg)
+complete_plot = plot(shc_complete, main = "complete")
+grid.arrange(ward_plot, single_plot, avg_plot, complete_plot, nrow = 2, top = "SHC Methods",
+             bottom = "[1,1] = Ward.D2   [1,2] = single    [2,1] = average    [2,2] = complete")
+
+#Mclust
+Mfit = Mclust(df)
+e = adjustedRandIndex(Mfit$classification, cluster_index)
+
+#Fviz
+wss = fviz_nbclust(df, kmeans, method = "wss") +
+ geom_vline(xintercept = 3, linetype = 2)+
+  labs(subtitle = "Elbow method")
+
+sil = fviz_nbclust(df, kmeans, method = "silhouette") +
+  labs(subtitle = "Silhouette method")
+
+gap = fviz_nbclust(df, kmeans, method = "gap_stat") +
+  labs(subtitle = "gap method")
+
+grid.arrange(wss, sil, gap, nrow = 2)
+
+#Kmeans
+kfit = kmeans(data[,1:2], centers = 3)
+f = adjustedRandIndex(kfit$cluster, cluster_index)
+
+#Compare Cluster Algorithms
+results = matrix(c(a, b, c, d, e, f), ncol = 1, byrow = TRUE)
+colnames(results) = "C. Rand"
+rownames(results) = c("ward.D2", "single", "average", "complete", "Mclust", "Kmeans")
+results = as.table(results)
+results
+```
+
+### Noise Level: 2
+In this data simulation, there are 48 noisy samples.  The shc function using Ward.D2 linkage is only able to detect 2 significant clusters. The rand indices of the Ward.D2 and average linkages have dropped even further, while the Kmeans rand index (using 3 clusters) has not diminished significantly.
+The fviz_nbclust results begin to be less definitive. The elbow and gap methods clearly show 3 clusters, while the silhouette methods shows 2. 
+
+```{r Noise Level: 2, echo=TRUE, message=FALSE, warning=FALSE}
+
+#Simulate data
+set.seed(1508)
+n1 <- 60; n2 <- 40; n3 <- 50; n <- n1 + n2 + n3
+p <- 50
+data <- (matrix(rnorm(n*p), nrow=n, ncol=p))
+data[, 1] <- data[, 1] + c(rep(2, n1), rep(-2, n2), rep(0, n3))
+data[, 2] <- data[, 2] + c(rep(0, n1+n2), rep(sqrt(3)*3, n3))
+df = as.data.frame(data)
+
+cluster_index = c(rep(1,n1), rep(2,n2), rep(3,n3)) #Real cluster index
+
+#SigClust2
+shc_ward <- shc(data, metric="euclidean", linkage="ward.D2", alpha = 0.05)
+shc_single <- shc(data, metric="euclidean", linkage="single", alpha = 0.05)
+shc_avg <- shc(data, metric="euclidean", linkage="average", alpha = 0.05)
+shc_complete <- shc(data, metric="euclidean", linkage="complete", alpha = 0.05)
+
+ward_index = cutree(shc_ward$hc_dat, k = 3)
+a = adjustedRandIndex(ward_index, cluster_index)
+
+single_index = cutree(shc_single$hc_dat, k = 3)
+b = adjustedRandIndex(single_index, cluster_index)
+
+avg_index = cutree(shc_avg$hc_dat, k = 3)
+c = adjustedRandIndex(avg_index, cluster_index)
+
+complete_index = cutree(shc_complete$hc_dat, k = 3)
+d = adjustedRandIndex(complete_index, cluster_index)
+
+#plot
+ward_plot = plot(shc_ward)
+single_plot = plot(shc_single)
+avg_plot = plot(shc_avg)
+complete_plot = plot(shc_complete, main = "complete")
+grid.arrange(ward_plot, single_plot, avg_plot, complete_plot, nrow = 2, top = "SHC Methods",
+             bottom = "[1,1] = Ward.D2   [1,2] = single    [2,1] = average    [2,2] = complete")
+
+#Fviz
+wss = fviz_nbclust(df, kmeans, method = "wss") +
+ geom_vline(xintercept = 3, linetype = 2)+
+  labs(subtitle = "Elbow method")
+
+sil = fviz_nbclust(df, kmeans, method = "silhouette") +
+  labs(subtitle = "Silhouette method")
+
+gap = fviz_nbclust(df, kmeans, method = "gap_stat") +
+  labs(subtitle = "gap method")
+
+grid.arrange(wss, sil, gap, nrow = 2)
+
+#Kmeans
+kfit3 = kmeans(data[,1:2], centers = 3)
+f = adjustedRandIndex(kfit3$cluster, cluster_index)
+kfit2 = kmeans(data[,1:2], centers = 2)
+g = adjustedRandIndex(kfit2$cluster, cluster_index)
+
+#Compare Cluster Algorithms
+results = matrix(c(a, b, c, d, f, g), ncol = 1, byrow = TRUE)
+colnames(results) = "C. Rand"
+rownames(results) = c("ward.D2", "single", "average", "complete", "Kmeans (3 clusters)",     "Kmeans (2 clusters)" )
+results = as.table(results)
+results
+```
+
+### Noise Level: 3
+In this data simulation, there are 98 noisy samples. The shc function using Ward.D2 linkage is only able to detect 2 significant clusters. The rand index of the complete linkage method has dropped to nearly 0, while the Ward.D2 method remains around 63. The Kmeans rand index (using 3 clusters) remains steady.
+Again, the fviz_nbclust results are inconclusive. Th elbow method continues to show 3 clusters, while the other methods suggest 2. 
+```{r Noise Level: 3, echo=TRUE, message=FALSE, warning=FALSE}
+
+#Simulate data
+set.seed(1508)
+n1 <- 60; n2 <- 40; n3 <- 50; n <- n1 + n2 + n3
+p <- 100
+data <- (matrix(rnorm(n*p), nrow=n, ncol=p))
+data[, 1] <- data[, 1] + c(rep(2, n1), rep(-2, n2), rep(0, n3))
+data[, 2] <- data[, 2] + c(rep(0, n1+n2), rep(sqrt(3)*3, n3))
+df = as.data.frame(data)
+cluster_index = c(rep(1,n1), rep(2,n2), rep(3,n3)) #Real cluster index
+
+#SigClust2
+shc_ward <- shc(data, metric="euclidean", linkage="ward.D2", alpha = 0.05)
+shc_single <- shc(data, metric="euclidean", linkage="single", alpha = 0.05)
+shc_avg <- shc(data, metric="euclidean", linkage="average", alpha = 0.05)
+shc_complete <- shc(data, metric="euclidean", linkage="complete", alpha = 0.05)
+
+ward_index = cutree(shc_ward$hc_dat, k = 3)
+a = adjustedRandIndex(ward_index, cluster_index)
+
+single_index = cutree(shc_single$hc_dat, k = 3)
+b = adjustedRandIndex(single_index, cluster_index)
+
+avg_index = cutree(shc_avg$hc_dat, k = 3)
+c = adjustedRandIndex(avg_index, cluster_index)
+
+complete_index = cutree(shc_complete$hc_dat, k = 3)
+d = adjustedRandIndex(complete_index, cluster_index)
+
+#plot
+ward_plot = plot(shc_ward)
+single_plot = plot(shc_single)
+avg_plot = plot(shc_avg)
+complete_plot = plot(shc_complete, main = "complete")
+grid.arrange(ward_plot, single_plot, avg_plot, complete_plot, nrow = 2, top = "SHC Methods",
+             bottom = "[1,1] = Ward.D2   [1,2] = single    [2,1] = average    [2,2] = complete")
+
+#Fviz
+wss = fviz_nbclust(df, kmeans, method = "wss") +
+ geom_vline(xintercept = 3, linetype = 2)+
+  labs(subtitle = "Elbow method")
+
+sil = fviz_nbclust(df, kmeans, method = "silhouette") +
+  labs(subtitle = "Silhouette method")
+
+gap = fviz_nbclust(df, kmeans, method = "gap_stat") +
+  labs(subtitle = "gap method")
+
+grid.arrange(wss, sil, gap, nrow = 2)
+
+#Kmeans
+kfit3 = kmeans(data[,1:2], centers = 3)
+f = adjustedRandIndex(kfit3$cluster, cluster_index)
+kfit2 = kmeans(data[,1:2], centers = 2)
+g = adjustedRandIndex(kfit2$cluster, cluster_index)
+
+#Compare Cluster Algorithms
+results = matrix(c(a, b, c, d, f, g), ncol = 1, byrow = TRUE)
+colnames(results) = "C. Rand"
+rownames(results) = c("ward.D2", "single", "average", "complete", "Kmeans (3 clusters)",     "Kmeans (2 clusters)" )
+results = as.table(results)
+results
+```
+
+### Noise Level: 4
+In this data simulation, there are 498 noisy samples (n >> p). None of the shc methods are able to detect significant clusters.
+The silhouette method shows 2 clusters, while the other two methods seem to have failed. 
+The Kmeans function is still able to correctly sort the data, provided the correct number of clusters are specified.
+```{r Noise Level: 4, echo=TRUE, message=FALSE, warning=FALSE}
+
+#Simulate data
+set.seed(1508)
+n1 <- 60; n2 <- 40; n3 <- 50; n <- n1 + n2 + n3
+p <- 500
+data <- (matrix(rnorm(n*p), nrow=n, ncol=p))
+data[, 1] <- data[, 1] + c(rep(2, n1), rep(-2, n2), rep(0, n3))
+data[, 2] <- data[, 2] + c(rep(0, n1+n2), rep(sqrt(3)*3, n3))
+df = as.data.frame(data)
+cluster_index = c(rep(1,n1), rep(2,n2), rep(3,n3)) #Real cluster index
+
+#SigClust2
+shc_ward <- shc(data, metric="euclidean", linkage="ward.D2", alpha = 0.05)
+shc_single <- shc(data, metric="euclidean", linkage="single", alpha = 0.05)
+shc_avg <- shc(data, metric="euclidean", linkage="average", alpha = 0.05)
+shc_complete <- shc(data, metric="euclidean", linkage="complete", alpha = 0.05)
+
+ward_index = cutree(shc_ward$hc_dat, k = 3)
+a = adjustedRandIndex(ward_index, cluster_index)
+
+single_index = cutree(shc_single$hc_dat, k = 3)
+b = adjustedRandIndex(single_index, cluster_index)
+
+avg_index = cutree(shc_avg$hc_dat, k = 3)
+c = adjustedRandIndex(avg_index, cluster_index)
+
+complete_index = cutree(shc_complete$hc_dat, k = 3)
+d = adjustedRandIndex(complete_index, cluster_index)
+
+#plot
+ward_plot = plot(shc_ward)
+single_plot = plot(shc_single)
+avg_plot = plot(shc_avg)
+complete_plot = plot(shc_complete, main = "complete")
+grid.arrange(ward_plot, single_plot, avg_plot, complete_plot, nrow = 2, top = "SHC Methods",
+             bottom = "[1,1] = Ward.D2   [1,2] = single    [2,1] = average    [2,2] = complete")
+
+#Fviz
+wss = fviz_nbclust(df, kmeans, method = "wss") +
+  labs(subtitle = "Elbow method")
+
+sil = fviz_nbclust(df, kmeans, method = "silhouette") +
+  labs(subtitle = "Silhouette method")
+
+gap = fviz_nbclust(df, kmeans, method = "gap_stat") +
+  labs(subtitle = "gap method")
+
+grid.arrange(wss, sil, gap, nrow = 2)
+
+#Kmeans
+kfit3 = kmeans(data[,1:2], centers = 3)
+f = adjustedRandIndex(kfit3$cluster, cluster_index)
+kfit2 = kmeans(data[,1:2], centers = 2)
+g = adjustedRandIndex(kfit2$cluster, cluster_index)
+
+#Compare Cluster Algorithms
+results = matrix(c(a, b, c, d, f, g), ncol = 1, byrow = TRUE)
+colnames(results) = "C. Rand"
+rownames(results) = c("ward.D2", "single", "average", "complete", "Kmeans (3 clusters)",     "Kmeans (2 clusters)" )
+results = as.table(results)
+results
+```
+
+## Results
+The most effective linkage method of the shc function when applied to noisy data appears to be the Ward.D2 method. This corresponds with Kimes' findings. The Mclust function is effectively able to sort small data into correct clusters, but fails at sorting larger data sets. The kmeans function is able to correctly cluster data of all sizes, provided the true number of clusters is known beforehand. As the data gets larger (and noisier), it becomes increasingly hard to know the true number of clusters.
